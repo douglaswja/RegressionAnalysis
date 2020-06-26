@@ -1,0 +1,140 @@
+
+############################      ACETYLENE DATA
+
+rm(list=ls())
+data<- read.table("Acetylene_data.csv",sep= ",", header=TRUE)
+data
+
+names(data)[1] = 'obs'
+names(data)[2] = 'percent'  # percent
+names(data)[3] = 'temp'  # temperature
+names(data)[4] = 'ratio'  # ratio of H_2....
+names(data)[5] = 'time'  # contact time
+
+plot(temp, time, main = "Acetylene Data", pch = 20)
+
+
+#centering data by: subtract th mean then dividing by the sd
+
+p<- percent
+t<- (temp-mean(temp))/sd(temp)
+h <- (ratio - mean(ratio))/sd(ratio)
+c <- (time - mean(time))/sd(time)
+
+data<- data.frame(p,t,h,c)
+
+attach(data)
+
+model<- lm(p ~ t + h + c + t*h + t*c + h*c + I(t^2) + I(h^2) + I(c^2) , data = data)
+
+summary(model)
+
+anova(model)
+
+
+plot(model, which = 1, pch = 20)
+
+qqnorm(rstandard(model),datax = TRUE, ylab = "Standardized Residuals", xlab = "Z scores", main = "Normal Probability Plot Acetylene Data")
+qqline(rstandard(model),datax = TRUE)
+
+#standardized residuals vs fitted:
+plot(model$fitted.values,rstandard(model), xlab="fitted", ylab= "Standardized Residuals", main = "Acetylene Data", pch = 20)
+abline(h=0)
+
+#standardized residuals vs temp:
+plot(t,rstandard(model), xlab="Temperature", ylab= "Standardized Residuals", main = "Acetylene Data")
+abline(h=0)
+
+
+#standardized residuals vs Ratio:
+plot(h,rstandard(model), xlab="Ratio", ylab= "Standardized Residuals", main = "Acetylene Data")
+abline(h=0)
+
+
+#standardized residuals vs Contact Time:
+plot(c,rstandard(model), xlab="Contact Time", ylab= "Standardized Residuals", main = "Acetylene Data")
+abline(h=0)
+
+############################################
+
+
+
+#centering data by: subtract the mean, dividing by the sqrt(S_xx)
+p<- percent
+t<- (temp-mean(temp))/sqrt(var(temp)*15)
+h <- (ratio - mean(ratio))/sqrt(var(ratio)*15)
+c <- (time - mean(time))/sqrt(var(time)*15)
+
+
+data<- data.frame(p,t,h,c)
+
+
+x<-cbind(t,h,c,t*h, t*c, h*c, t^2, h^2, c^2)
+
+x<-cor(x) #this is the correlation matrix of x, which is called as X'X in correlation form
+
+
+eigen(x)$values
+
+#condition number is:
+
+cond <- max(eigen(x)$values)/min(eigen(x)$values)
+#43381.31 ( = 42048 as in the lecture note due to rounding)
+
+#condition indices:
+
+max(eigen(x)$values)/eigen(x)$values
+
+#### To find VIFs:
+
+
+x<-cbind(t,h,c,t*h, t*c, h*c, temp^2, ratio^2, time^2)
+
+x<- cor(x) #this is X'X (correlation form)
+
+C<-solve(x)  #this is (X'X)^(-1)
+
+VIF <- diag(C) 
+
+ 
+
+
+######################### 
+
+
+########################   RIDGE REGRESSION
+
+#centering data by: subtract the mean then dividing by the sd
+
+p<- percent
+t<- (temp-mean(temp))/sd(temp)
+h <- (ratio - mean(ratio))/sd(ratio)
+c <- (time - mean(time))/sd(time)
+
+data<- data.frame(p,t,h,c)
+
+attach(data)
+
+
+lm.ridge(p ~ t + h + c + t*h + t*c + h*c + I(t^2) + I(h^2) + I(c^2) , data = data,lambda = 0)
+#the coefficients from this is as the same as from the least square model, since lambda = 0
+
+
+plot(lm.ridge(p ~ t + h + c + t*h + t*c + h*c + I(t^2) + I(h^2) + I(c^2), data, lambda = seq(0,0.5,0.01)), type="l",lty=1)
+
+select(lm.ridge(p ~ t + h + c + t*h + t*c + h*c + I(t^2) + I(h^2) + I(c^2), data,lambda = seq(0,0.5,0.001)))
+
+
+
+ridge<-lm.ridge(p ~ t + h + c + t*h + t*c + h*c + I(t^2) + I(h^2) + I(c^2) , data= data, lambda = 0.032)
+
+coef(ridge)
+
+
+
+
+
+
+
+
+

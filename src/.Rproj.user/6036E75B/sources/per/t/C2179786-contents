@@ -1,0 +1,105 @@
+
+
+
+rm(list=ls())
+data<- read.table("Delivery_Time.csv",sep= ",", header=TRUE)
+data
+
+names(data)[2] = 'time'
+names(data)[3] = 'cases'
+names(data)[4] = 'distance'
+
+attach(data)
+
+model<- lm(time ~ cases + distance, data = data)
+
+summary(model)
+
+plot(cases, distance)
+
+anova(model)
+
+model_swop<- lm(time ~  distance + cases, data = data)
+
+summary(model_swop)
+
+anova(model_swop)
+
+#Normal probability plot =  QQ plot
+qqnorm(rstandard(model),datax = TRUE, ylab = "Standardized Residuals", xlab = "Z scores", main = "Normal Probability Plot Delivery Data")
+qqline(rstandard(model),datax = TRUE)
+
+#standardized residuals vs fitted:
+plot(model$fitted.values,rstandard(model), xlab="fitted time", ylab= "Standardized Residuals", main = "Delivery Data")
+abline(h=0)
+
+#standardized residuals vs cases:
+plot(cases,rstandard(model), xlab="cases", ylab= "Standardized Residuals", main = "Delivery Data")
+abline(h=0)
+
+#standardized residuals vs distance:
+plot(distance,rstandard(model), xlab="distance", ylab= "Standardized Residuals", main = "Delivery Data")
+abline(h=0)
+
+
+
+
+
+#Model 1: time on cases
+model_1 <- lm(time ~ cases, data = data)
+
+summary(model_1)
+
+#Model 2: distiance on cases
+model_2 = lm( distance ~ cases, data = data)
+
+summary(model_2)
+
+#Model 3: residuals of model 1 on residuals of model 2:
+
+model_3 <- lm(model_1$residuals ~ model_2$residuals)
+summary(model_3)
+
+model_3$residuals
+
+model$residuals
+
+
+
+
+
+
+
+
+
+
+######################   MULTICOLLINEARITY
+
+
+
+x<-cbind(cases, distance)
+
+
+cor(x)
+
+x<-cor(x)
+
+
+C<-solve(x)
+
+VIF<-diag(C)
+VIF
+
+#condition number:
+
+eigen(x)$values
+
+max(eigen(x)$values)/min(eigen(x)$values)
+
+hat<-x%*%solve(t(x)%*%x)%*%t(x)
+#diag(hat)
+
+2*3/25 # = 0.24
+which(diag(hat)>0.24)
+diag(hat)[which(diag(hat)>0.24)]
+

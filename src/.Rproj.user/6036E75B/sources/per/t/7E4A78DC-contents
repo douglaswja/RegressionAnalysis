@@ -1,0 +1,187 @@
+---
+title: "ST3131 Regression Analysis Assignment"
+author: "Douglas Wei Jing Allwood"
+date: "April 2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Import data and libraries
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(psych)
+
+wine <- read.csv("../data/wine.csv")
+attach(wine)
+```
+
+
+# 1. Introduction
+Our goal is to propose a model that accurately describes the Quality of wine 
+using information pertaining to its clarity, aroma, body, flavor, oakiness, and 
+the region it was from.  
+
+Specifically, we want to estimate a model of the following form:  
+$$
+Quality = \beta_0 + \beta_1*Clarity + \beta_2*Aroma + \beta_3*Body +
+          \beta_4*Flavor + \beta_5*Oakiness + \beta_6*Quality + \beta_7*Region
+          \\
+\beta_i \in \mathbb{R}, \forall{i}
+$$
+Note that the form of the model shown above could be expanded to include 
+interaction terms in the form of $\beta_8 * Clarity * Body$ or even higher 
+order terms such as $\beta_9 * Clarity^2$. Such additions will be considered 
+when necessary. For example, when trying to correct for linearity or constant 
+variance between regressors and response.  
+
+To produce a model that can go beyond just accurately describing the given 
+(training) data, to also accurately make new predictions or mild 
+extrapolations, the model produced must be adequate for the given problem. 
+This is especially important given that the dataset is relatively small, only 
+having 38 samples. Hence, we will decide on a model by prioritising model 
+adequacy over data-specific metrics such as the $R^2$ coefficient or hypothesis 
+testing performed on model parameters. Though these will still be used to 
+refined the adequate model once it is found.  
+
+
+# 2. Data exploration before modelling
+This is what a sample of the given data looks like:  
+
+```{r echo=FALSE}
+head(wine, n=5)
+```
+
+We notice that _Clarity_ and _Region_ take on a limited range of values:    
+_Clarity_: `r sort(unique(Clarity))`  
+_Region_: `r sort(unique(Region))`
+  
+_Region_: Almost certainly a categorical regressor as it describes the location 
+where the wine originated from.  
+
+_Clarity_: Further information is needed to conclude if categorical or otherwise.  
+This is as the values of _Clarity_ likely possess an ordering where a wine 
+with a lower clarity would be assigned a lower value, vice versa.  
+Since an ordering could exist, this variable is unlikely to be categorical.
+
+```{r warning=FALSE, message=FALSE}
+wine$Region <- as.factor(wine$Region)
+attach(wine)
+```
+
+Having transformed _Region_ into a categorical variable, we now want to  
+understand the relation between all the variables (regressors and response) 
+provided.  
+
+
+## 2.1 Understanding relationships in the data
+The following code produces a grid showing the correlations and scatter plots 
+between variables, the histogram of each individual variable.
+```{r}
+pairs.panels(wine, 
+             method = "pearson", # correlation method
+             hist.col = "#00BECC",
+             density = FALSE,  # show density plots
+             ellipses = FALSE # show correlation ellipses
+             )
+```
+
+We observe that _Quality_ appears to be positively linearly related to _Aroma_ 
+and _Flavor_ as seen in both the scatter plots and their high correlation values 
+with _Quality_. 0.71 and 0.79, respectively. This indicates that _Aroma_ and _Flavor_ may be useful in predicting the _Quality_ of a wine sample.  
+
+The relationship between _Quality_ and  the other regressors is harder to 
+determine and may exist with 3 or more variables, interaction terms, or perhaps 
+not exist at all.  
+
+Generally, if we consider the scatter plots along the _Quality_ row, it does not
+appear necessary to transform the regressors as the scatter plots either already 
+show some (weak) linear relationship with Quality, or no relationship at all. 
+We will revisit the need to transform variables during residual analysis.  
+
+We also observe a high correlation of 0.74 between the two regressors _Aroma_ 
+and _Flavor_. This would agree with common intuition that wines with stronger 
+flavours also have stronger aromas, vice versa. However, this reveals the 
+potential for multicollinearity to exist in the given data. Mutlicolinearity 
+could increase the variance of fitted parameters and hence decrease the 
+effectiveness of a fitted model when performing mild extrapolation. Hence, we 
+must also try to detect for mutlicolinearity in the data exploration phase and 
+address it in the model building if it exists.
+
+Note that the scatter plots above can only help us to detect if a 2D 
+relationship exists between each variable. Notably, such scatter plots will 
+fail to help us detect if relationships exist in 3D. Hence, we cannot drop 
+variables yet or be certain about the extent of multicollinearity in the data.
+
+
+## 2.2 Detecting multicollinearity
+```{r}
+# Centering data: Subtract the mean, divide by sqrt(S_xx)
+q <- Quality
+C <- (Clarity-mean(Clarity))/(sqrt(var(Clarity)*38))
+A <- (Aroma - mean(Aroma))/(sqrt(var(Aroma)*38))
+B <- (Body - mean(Body))/(sqrt(var(Body)*38))
+FL <- (Flavor - mean(Flavor))/(sqrt(var(Flavor)*38))
+O <- (Oakiness - mean(Oakiness))/(sqrt(var(Oakiness)*38))
+
+data<- data.frame(q, C, A, B, FL, O)
+x<-cbind(q, C, A, B, FL, O)
+x<-cor(x) # Correlation matrix of x, X'X
+
+# The condition number is:
+cond <- max(eigen(x)$values)/min(eigen(x)$values)
+#18.72341
+
+#condition indices:
+cat("The condition indices are: ", max(eigen(x)$values)/eigen(x)$values, "\n")
+
+
+#### To find VIFs:
+C <- solve(x)  #this is (X'X)^(-1)
+VIF <- diag(C)
+cat("The VIF values are: ", VIF, "\n")
+```
+
+The small condition number and VIF values above suggest that multicolinearity 
+either does not exist in the given data or is very weak. Either way, this 
+suggests that we do not have to worry about multicolinearity in the building of 
+the model.  
+
+
+# 3. Perform initial basic model and check residuals
+We now apply the standard Linear Regression model in R with the aim of studying 
+the residuals and correcting any violations of our assumptions by transforming 
+the variables.
+```{r}
+model1 <- lm(Quality ~ Clarity + Aroma + Body + Flavor + Oakiness + Region,
+             data = wine)
+summary(model1)
+anova(model1)
+```
+
+
+
+
+
+
+4. Model, resid analysis
+do simple model corrections (try dropping variables w multi colin) and try again
+then do step regression
+can manually do hypot testing
+
+5. Ridge, fixes multi colinearity  (Try making the increasing k plot)
+7. Compare the two models
+
+
+# 4 Model and fix previous problems
+  # 3. Linear Regression modelling
+  ## 3.1 Try the different types of models (Box-Cox, Box-Tidwell, WLS (try residual
+  ##     plot), Ridge Regression)
+
+# 5. Finally perform step regression
+
+Lastly, i could check accuracy
+
+# 6. Make recommendations and offer some interpretation
+

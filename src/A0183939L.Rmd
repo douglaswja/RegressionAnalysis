@@ -1,0 +1,473 @@
+---
+title: "ST3131 Regression Analysis Assignment"
+author: "Douglas Wei Jing Allwood (A0183939L)"
+date: "April 2020"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+## Import data and libraries
+library(dplyr)
+library(ggplot2)
+library(psych)
+
+wine <- read.csv("../data/wine.csv")
+attach(wine)
+```
+
+
+# 1. Introduction
+Our goal is to propose a model that accurately describes the Quality of wine 
+using information pertaining to its clarity, aroma, body, flavor, oakiness, and 
+the region it was from.  
+
+Specifically, we want to estimate a model of the following form:  
+$$
+Quality = \beta_0 + \beta_1(Clarity) + \beta_2(Aroma) + \beta_3(Body) +
+          \beta_4(Flavor) + \beta_5(Oakiness) + \beta_6(Quality) + \beta_7(Region)
+$$
+
+$$
+\beta_i \in \mathbb{R}, \forall{i}
+$$
+Note that the form of the model shown above could be expanded to include 
+interaction terms in the form of $\beta_8 * Clarity * Body$ or even higher 
+order terms such as $\beta_9 * Clarity^2$. Such additions will be considered 
+when necessary. For example, when trying to correct for linearity or constant 
+variance between regressors and response.  
+
+To produce a model that can go beyond just accurately describing the given 
+(training) data, to also accurately make new predictions or mild 
+extrapolations, the model produced must be adequate for the given problem. 
+This is especially important given that the dataset is relatively small, only 
+having 38 samples. Hence, we will decide on a model by prioritising model 
+adequacy over data-specific metrics such as the $R^2$ coefficient or hypothesis 
+testing performed on model parameters. Though these will still be used to 
+refined the adequate model once it is found.  
+
+
+# 2. Data exploration before modelling
+This is what a sample of the given data looks like:  
+
+```{r echo=FALSE}
+head(wine, n=5)
+```
+
+We notice that _Clarity_ and _Region_ take on a limited range of values:  
+
+_Region_: `r sort(unique(Region))`  
+Almost certainly a categorical regressor as it describes the location 
+where the wine originated from.  
+
+_Clarity_: `r sort(unique(Clarity))`  
+Likely possess an ordering where a wine 
+with a lower clarity would be assigned a lower value, vice versa.  
+Since an ordering could exist, this variable is unlikely to be categorical.  
+
+```{r include=FALSE, warning=FALSE, message=FALSE}
+wine$Region <- as.factor(wine$Region)
+attach(wine)
+```
+
+Hence, we transform _Region_ into a categorical variable.  
+
+
+## 2.1 Understanding relationships in the data
+We now want to understand the relation between all the variables (regressors and response) provided.  
+
+The following graph shows a grid of the correlations and scatter plots 
+between variables, and the histogram of each individual variable.  
+
+```{r echo=FALSE}
+pairs.panels(wine, 
+             method = "pearson", # correlation method
+             hist.col = "#00BECC",
+             density = FALSE,  # show density plots
+             ellipses = FALSE # show correlation ellipses
+             )
+```
+
+The histogram of _Quality_ appears symmetric, almost Normally distributed.  
+
+We observe that _Quality_ appears to be positively linearly related to _Aroma_ 
+and _Flavor_ as seen in both the scatter plots and their high correlation values 
+with _Quality_. 0.71 and 0.79, respectively. This indicates that _Aroma_ and _Flavor_ may be useful in predicting the _Quality_ of a wine sample. However, _Aroma_ and 
+_flavor_ are also highly correlated (0.74), this reveals the potential for 
+mutlicollinearity which could increase the variance of fitted parameters and hence decrease the effectiveness of a fitted model when performing mild extrapolation. 
+Hence, we must also try to detect for mutlicolinearity in the data exploration 
+phase and address it in the model building if it exists.
+
+The relationship between _Quality_ and  the other regressors is harder to 
+determine and may exist with 3 or more variables, interaction terms, or perhaps 
+not exist at all.  
+
+Generally, if we consider the scatter plots along the _Quality_ row, it does not
+appear necessary to transform the regressors as the scatter plots either already 
+show some (weak) linear relationship with Quality, or no relationship at all. 
+We will revisit the need to transform variables during residual analysis.  
+
+Note that the scatter plots above can only help us to detect if a 2D 
+relationship exists between each variableand  will fail to detect if relationships exist in 3D or higher. Hence, we cannot drop variables yet or be certain about the extent of multicollinearity in the data.
+
+
+## 2.2 Detecting multicollinearity
+```{r include=FALSE}
+# Centering data: Subtract the mean, divide by sqrt(S_xx)
+# sqrt(S_xx) = (n-p) * MS_res
+# n = 38, p = 7, n-p = 31
+q <- Quality
+C <- (Clarity-mean(Clarity))/(sqrt(var(Clarity))*37)
+A <- (Aroma - mean(Aroma))/(sqrt(var(Aroma))*37)
+B <- (Body - mean(Body))/(sqrt(var(Body))*37999)
+FL <- (Flavor - mean(Flavor))/(sqrt(var(Flavor))*37)
+O <- (Oakiness - mean(Oakiness))/(sqrt(var(Oakiness))*37)
+
+x <- cbind(C, A, B, FL, O)
+x <- cor(x) # Correlation matrix of x, X'X
+
+# The condition number is:
+cond <- max(eigen(x)$values)/min(eigen(x)$values)
+
+#condition indices:
+cat("The condition indices are: ", max(eigen(x)$values)/eigen(x)$values, "\n")
+
+
+#### To find VIFs:
+C <- solve(x)  #this is (X'X)^(-1)
+VIF <- diag(C)
+cat("The VIF values are: ", VIF, "\n")
+```
+__The code for detecting multicollinearity is in the Appendix__  
+
+The condition indices are:  1, 1.911732, 2.998716, 6.89035, 9.729912  
+The VIF values are:  1.26639, 2.381143, 2.056492, 2.682277, 1.096731  
+
+The small condition number (9.73) and small VIF values (< 10) above suggest that 
+multicollinearity either does not exist in the given data or is very weak. 
+Either way, this suggests that we do not have to worry about multicollinearity 
+in the building of the model.  
+
+Hence, it appears that the correlation between regressors does not actually 
+seem to be causing multicollinearity problems as previously feared.  
+
+
+# 3. Perform initial Linear Regression and check residuals
+We now apply the standard Linear Regression model in R with the aim of studying 
+the residuals and correcting any violations of our assumptions by transforming 
+the variables.  
+
+
+```{r include=FALSE}
+model1 <- lm(Quality ~ Clarity + Aroma + Body + Flavor + Oakiness + Region,
+             data = wine)
+summary(model1)
+anova(model1)
+```
+
+```
+model1 <- lm(Quality ~ Clarity + Aroma + Body + Flavor + Oakiness + Region, data = wine)
+summary(model1)
+```
+
+```{r echo=FALSE}
+summary(model1)
+```
+
+__Please find the Anova table of Model1 in the Appendix if needed__  
+
+Referencing the Summary table of model1 there are several important observations:  
+
+1. The F-test on the significance of the model shows that model1 is significant
+2. As previously speculated, Flavor does help in predicting wine Quality as seen 
+   in its statistically significant non-zero estimated coefficient, $\hat{\beta_4}$.
+   (P-value $6.25*10^{-5}$ for the t-test)
+3. Contrary to what was expected, the coefficient for Aroma has a p-value of 
+   $0.72$ for the t-test of significance which suggests that this variable could 
+   be dropped from the model. This may warrant further transformations of the 
+   Aroma variable.
+4. There are several variables that have t-test results suggesting that they are 
+   insignificant. We could consider variable selection techniques later on as 
+   filtering out variables would improve the AIC|BIC of our model by producing a 
+   smaller AIC|BIC value.
+
+# 3.1 Analysis of model graphs
+```{r echo=FALSE, fig.width=10,fig.height=4}
+#Normal probability plot =  QQ plot
+par(mfrow=c(1,2))
+qqnorm(rstandard(model1),datax = TRUE, ylab = "Standardized Residuals",
+       xlab = "Z scores", main = "Normal Probability Plot Wine Data")
+qqline(rstandard(model1),datax = TRUE)
+
+#standardized residuals vs fitted:
+plot(model1$fitted.values,rstandard(model1),
+     xlab="Fitted Quality", ylab= "Standardized Residuals",
+     main = "Wine Data")
+abline(h=0)
+```
+
+In the Normal Probability QQ plot we see that the 38 data points closely follow 
+the line $y = x$. Hence, our assumption that the errors are normally distributed 
+seems to hold.
+
+Additionally, the standardized residuals seem to be randomly distributed about 
+the $y=0$ line when plotted against the fitted _Quality_ values.  Majority of the 
+points fall within the range $-2 \leq e_i \leq 2$, with the exception of one 
+point greater than 2 and two points less than -2. If we consider these three points 
+to be outliers, this proportion of outliers $\frac{3}{38} \approx 0.079$ is 
+reasonable for a normal distribution. As we would expect approximately $95\%$ of 
+the data to fall within 2 standard deviations and $5\%$ to fall outside.  
+
+
+```{r echo=FALSE}
+par(mfrow=c(2,3))
+#standardized residuals vs Regressor:
+plot(Clarity, rstandard(model1),
+     xlab="Clarity", ylab= "Standardized Residuals",
+     main = "Residuals vs Clarity")
+abline(h=0)
+
+
+plot(Aroma, rstandard(model1),
+     xlab="Aroma", ylab= "Standardized Residuals",
+     main = "Residuals vs Aroma")
+abline(h=0)
+
+
+plot(Body, rstandard(model1),
+     xlab="Body", ylab= "Standardized Residuals",
+     main = "Residuals vs Body")
+abline(h=0)
+
+
+plot(Flavor, rstandard(model1),
+     xlab="Flavor", ylab= "Standardized Residuals",
+     main = "Residuals vs Flavor")
+abline(h=0)
+
+
+plot(Oakiness, rstandard(model1),
+     xlab="Oakiness", ylab= "Standardized Residuals",
+     main = "Residuals vs Oakiness")
+abline(h=0)
+
+
+plot(Region, rstandard(model1),
+     xlab="Region", ylab= "Standardized Residuals",
+     main = "Residuals vs Region")
+abline(h=0)
+```
+
+From the individual Residual against Regressor plots we see that the variance of 
+the residuals appear to be related to Clarity in an widening funnel shape, and 
+Aroma in a narrowing funnel shape. Hence, we can consider transforming these 
+regressors or dropping them entirely.  
+
+The rest of the plots show a random distribution of residuals on both sides of 
+the $y=0$ line, which agrees with our assumption that residuals are independent 
+of these regressors.  
+
+## 4. Transformation of variables
+
+To decide on an appropriate transformation of the variables __Clarity__ and 
+__Aroma__ we can use the Box-Tidwell procedure.
+
+```{r include=FALSE}
+# For the Clarity variable
+model2 <- lm(Quality ~ Clarity + Aroma + Body + Flavor + Oakiness + Region,
+             data = wine)
+model3 <- lm(Quality ~ Clarity + I(Clarity * log(Clarity)) + Aroma + Body + 
+             Flavor + Oakiness + Region, data = wine)
+gamma1 <- model3$coefficients["I(Clarity * log(Clarity))"]
+beta1 <- model2$coefficients["Clarity"]
+power1 <- as.numeric((gamma1/beta1) + 1)
+#power1
+```
+
+```{r include=FALSE}
+# For the Aroma variable
+model2 <- lm(Quality ~ Clarity + Aroma + Body + Flavor + Oakiness + Region,
+             data = wine)
+model3 <- lm(Quality ~ Clarity + Aroma + I(Aroma * log(Aroma)) + Body + 
+             Flavor + Oakiness + Region, data = wine)
+gamma2 <- model3$coefficients["I(Aroma * log(Aroma))"]
+beta2 <- model2$coefficients["Aroma"]
+power2 <- as.numeric((gamma2/beta2) + 1)
+#power2
+```
+
+__Please see the appendix for the code for the Box-Tidwell procedure__  
+
+The results of the Box-Tidwell procedure are as follows:  
+
+- __Clarity__: $Clarity^{1853.6}$  
+- __Aroma__: $Power^{1.0070}$  
+
+As _Clarity_ takes on a limited range of values between 0 and 1, raising it 
+to a large power would send the values to 0 if they are less than 1. This 
+suggests that we either remove the _Clarity_ variable or transform it into 
+an indicator: 1 if _Clarity_ is 1, and 0 otherwise. However, this 
+transformation to a indicator would not make sense in the context of what the 
+variable is supposed to be - an ordered numerical value indicating the clarity 
+of a wine sample. 
+On, the other hand, due to the large p-value of _Clarity_ in the t-test 
+of the model1 summary (p-value of 0.99), we can choose to drop _Clarity_.  
+
+For _Aroma_, the result of the Box-Tidwell procedure suggests that no 
+transformation is necessary. Hence, we only have to decide whether to keep it 
+or drop it.  
+
+To analytically decide whether to drop these variables, we can use the AIC and 
+BIC metrics via step regression.  
+
+## 5. AIC and BIC step regression
+```{r include=FALSE}
+model4 <- step(model1, direction = c("both"))
+summary(model4)
+```
+
+```
+model4 <- step(model1, direction = c("both"))
+summary(model4)
+```
+
+```{r echo=FALSE}
+summary(model4)
+```
+
+__Please see the appendix for the intermediate results of step regression of model4__  
+
+
+The model produced by step regression dropped both _Clarity_ and _Aroma_.
+Additonally, it dropped the _Body_ variable.  
+
+The final model produced by step regression has an approximately equal $R^2$ 
+value as model1, the full model.  
+(_model1 $R^2=0.8376$_, _model4 $R^2=0.8363$_)  
+
+
+# 6. Recommendation
+Overall, we saw in the Residual against Regressor graphs that _Clarity_ and 
+_Aroma_ violate the assumption that residuals are independent of the regressors. Additionally, the t-test and step regression both suggest that we drop these 
+variables. Hence, we will drop them from the final model.  
+
+For the _Body_ variable, though the t-test and step regression suggest that we 
+drop the variable, as the Residual against _Body_ graph does not show any 
+violation of our assumptions, we will keep the variable. The reason for 
+keeping the variable is that it  shows a weak linear relationship with _Quality_ 
+with a correlation of 0.55. Hence, the variable might be a weak but useful 
+indicator of _Quality_. 
+If we were to collect more data, we could reevaluate keeping this variable.  
+
+# Final Model
+```{r}
+model5 <- lm(Quality ~ Body + Flavor + Oakiness + Region, data = wine)
+summary(model5)
+```
+The final model we produce is:
+$$
+\hat{Quality} = 7.94 + 0.08(Body) + 1.16(Flavor) - 0.32(Oakiness) - 
+                1.52(I(Region==2)) + 1.07(I(Region==3))
+\\
+$$
+Where $I(Region==i) = 1$ if Region = i and 0 otherwise.  
+Note that the final model is statistically significant according to the F-test 
+as it has p-value = $1.52*10^{-11}$.  
+
+\pagebreak
+
+# Appendix
+All code and auxilary tables (e.g. Anova tables that were not referenced but may be of interest)  
+
+## Import data and libraries
+```{r warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(psych)
+
+wine <- read.csv("../data/wine.csv")
+attach(wine)
+
+wine$Region <- as.factor(wine$Region)
+attach(wine)
+```
+
+## Multicollinearity
+```{r}
+# Centering data: Subtract the mean, divide by sqrt(S_xx)
+# sqrt(S_xx) = (n-p) * MS_res
+# n = 38, p = 7, n-p = 31
+q <- Quality
+C <- (Clarity-mean(Clarity))/(sqrt(var(Clarity))*37)
+A <- (Aroma - mean(Aroma))/(sqrt(var(Aroma))*37)
+B <- (Body - mean(Body))/(sqrt(var(Body))*37999)
+FL <- (Flavor - mean(Flavor))/(sqrt(var(Flavor))*37)
+O <- (Oakiness - mean(Oakiness))/(sqrt(var(Oakiness))*37)
+
+x <- cbind(C, A, B, FL, O)
+x <- cor(x) # Correlation matrix of x, X'X
+
+# The condition number is:
+cond <- max(eigen(x)$values)/min(eigen(x)$values)
+
+#condition indices:
+cat("The condition indices are: ", max(eigen(x)$values)/eigen(x)$values, "\n")
+
+
+#### To find VIFs:
+C <- solve(x)  #this is (X'X)^(-1)
+VIF <- diag(C)
+cat("The VIF values are: ", VIF, "\n")
+```
+
+
+## Model1
+```{r}
+model1 <- lm(Quality ~ Clarity + Aroma + Body + Flavor + Oakiness + Region,
+             data = wine)
+anova(model1)
+
+
+```
+
+
+## Box-Tidwell on Clarity variable
+```{r}
+# For the Clarity variable
+model2 <- lm(Quality ~ Clarity + Aroma + Body + Flavor + Oakiness + Region,
+             data = wine)
+model3 <- lm(Quality ~ Clarity + I(Clarity * log(Clarity)) + Aroma + Body + 
+             Flavor + Oakiness + Region, data = wine)
+gamma1 <- model3$coefficients["I(Clarity * log(Clarity))"]
+beta1 <- model2$coefficients["Clarity"]
+power1 <- as.numeric((gamma1/beta1) + 1)
+#power1
+```
+
+## Box-Tidwell on Aroma variable
+```{r}
+# For the Aroma variable
+model2 <- lm(Quality ~ Clarity + Aroma + Body + Flavor + Oakiness + Region,
+             data = wine)
+model3 <- lm(Quality ~ Clarity + Aroma + I(Aroma * log(Aroma)) + Body + 
+             Flavor + Oakiness + Region, data = wine)
+gamma2 <- model3$coefficients["I(Aroma * log(Aroma))"]
+beta2 <- model2$coefficients["Aroma"]
+power2 <- as.numeric((gamma2/beta2) + 1)
+#power2
+```
+
+
+## AIC and BIC step regression
+```{r}
+model4 <- step(model1, direction = c("both"))
+summary(model4)
+```
+
+## Final model
+```{r}
+model5 <- lm(Quality ~ Body + Flavor + Oakiness + Region, data = wine)
+anova(model5)
+```

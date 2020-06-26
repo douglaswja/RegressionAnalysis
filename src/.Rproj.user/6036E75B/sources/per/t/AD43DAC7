@@ -1,0 +1,25 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1586994541999.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "3061749830",
+    "id" : "AD43DAC7",
+    "lastKnownWriteTime" : 1586992001,
+    "last_content_update" : 1586992001,
+    "path" : "D:/OneDrive/Desktop/NUS Work/ST3131/CodeFromProf/acetylene_multicollinearity_code.r",
+    "project_path" : null,
+    "properties" : {
+        "cursorPosition" : "61,0",
+        "scrollLine" : "52"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 4,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
